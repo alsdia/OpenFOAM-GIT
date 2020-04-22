@@ -1,0 +1,153 @@
+#----------------------------------*-sh-*--------------------------------------
+# =========                 |
+# \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+#  \\    /   O peration     |
+#   \\  /    A nd           | www.openfoam.com
+#    \\/     M anipulation  |
+#------------------------------------------------------------------------------
+#     Copyright (C) 2018-2020 OpenCFD Ltd.
+#------------------------------------------------------------------------------
+# License
+#     This file is part of OpenFOAM, distributed under GPL-3.0-or-later.
+#
+# Script
+#     have_hypre
+#
+# Description
+#     Detection/setup of HYPRE
+#
+# Requires
+#     HYPRE_ARCH_PATH
+# or  config.sh/hypre
+#
+# Functions provided
+#     have_hypre, no_hypre, echo_hypre, query_hypre
+#
+# Variables set on success
+#     HAVE_HYPRE
+#     HYPRE_ARCH_PATH
+#     HYPRE_INC_DIR
+#     HYPRE_LIB_DIR
+#
+#------------------------------------------------------------------------------
+. ${WM_PROJECT_DIR:?}/wmake/scripts/sysFunctions    # General system functions
+
+#------------------------------------------------------------------------------
+
+# Reset variables
+no_hypre()
+{
+    unset HAVE_HYPRE HYPRE_INC_DIR HYPRE_LIB_DIR
+}
+
+
+# Report
+echo_hypre()
+{
+    echo "hypre=${HAVE_HYPRE:-false}"
+    echo "root=$HYPRE_ARCH_PATH"
+    echo "include=$HYPRE_INC_DIR"
+    echo "library=$HYPRE_LIB_DIR"
+}
+
+
+# Query settings
+query_hypre()
+{
+    local config="config.sh/hypre"
+    local settings
+
+    if settings="$("$WM_PROJECT_DIR"/bin/foamEtcFile -mode=o "$config")"
+    then
+        . "$settings"
+        _process_query hypre "$HYPRE_ARCH_PATH"
+    else
+        echo "(no $config settings)" 1>&2
+        echo "hypre=unknown"
+    fi
+}
+
+
+# On success, return 0 and export variables
+# -> HAVE_HYPRE, HYPRE_INC_DIR, HYPRE_LIB_DIR
+have_hypre()
+{
+    local warn="==> skip hypre"
+    local config="config.sh/hypre"
+    local settings
+
+    # Setup - prefer current environment value? (TDB)
+    if [ ! -d "$HYPRE_ARCH_PATH" ]
+    then
+        if settings="$("$WM_PROJECT_DIR"/bin/foamEtcFile "$config")"
+        then
+            . "$settings"
+        else
+            [ -n "$warn" ] && echo "$warn (no $config settings)"
+            return 2
+        fi
+    fi
+
+    # Expected location, include/library names
+    local prefix="$HYPRE_ARCH_PATH"
+    local incName="HYPRE.h"
+    local libName="libHYPRE"
+    local header library
+
+    # ----------------------------------
+    if isNone "$prefix"
+    then
+        [ -n "$warn" ] && echo "$warn (disabled)"
+        return 1
+    elif hasAbsdir "$prefix"
+    then
+        header=$(findFirstFile "$prefix/include/$incName")
+        library=$(findExtLib "$libName")
+    elif isSystem "$prefix"
+    then
+        header=$(findSystemInclude -name="$incName")
+        prefix=$(sysPrefix "$header")
+    else
+        unset prefix
+    fi
+    # ----------------------------------
+
+    # Header
+    [ -n "$header" ] || {
+        [ -n "$warn" ] && echo "$warn (no header)"
+        return 2
+    }
+
+    # Library
+    [ -n "$library" ] \
+    || library=$(findLibrary -prefix="$prefix" -name="$libName") \
+    || {
+        [ -n "$warn" ] && echo "$warn (no library)"
+        return 2
+    }
+
+    # ----------------------------------
+
+    # OK
+    export HAVE_HYPRE=true
+    export HYPRE_ARCH_PATH="$prefix"
+    export HYPRE_INC_DIR="${header%/*}"     # Basename
+    export HYPRE_LIB_DIR="${library%/*}"    # Basename
+}
+
+
+# Reset variables
+no_hypre
+
+# Test/query
+case "$1" in
+-test)
+    have_hypre
+    echo_hypre
+    ;;
+-query)
+    query_hypre
+    ;;
+esac
+
+#------------------------------------------------------------------------------
